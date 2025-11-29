@@ -1,220 +1,210 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import HelpRequestList from "./components/HelpRequestList";
+import ChatWindow from "./components/ChatWindow";
+import {
+  fetchHelpRequests,
+  createHelpRequest,
+  claimHelpRequest,
+  completeHelpRequest,
+  type HelpRequest,
+} from "./service/helpRequestService";
+import React from "react"; 
 
-type HelpRequest = {
-  id: string;
-  createdBy: string;
-  claimedBy?: string | null;
-  status: string;
-  title: string;
-  description?: string;
+// --- Styling Constants ---
+const BRAND_COLOR = "#007bff";
+
+const inputStyle: React.CSSProperties = {
+  padding: "0.6rem 1rem",
+  borderRadius: "6px",
+  border: "1px solid #ddd",
+  fontSize: "1rem",
+  marginRight: "1rem",
+  transition: "border-color 0.2s",
 };
 
+const primaryButtonStyle: React.CSSProperties = {
+  backgroundColor: BRAND_COLOR,
+  color: "#fff",
+  border: "none",
+  borderRadius: "6px",
+  padding: "0.6rem 1.2rem",
+  cursor: "pointer",
+  fontWeight: "bold",
+  transition: "background-color 0.2s",
+};
+
+// --- Component Start ---
 function App() {
   const [requests, setRequests] = useState<HelpRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [filter, setFilter] = useState("ALL");
-  const [userRole, setUserRole] = useState("REQUESTER"); // ✅ 新增角色切換
+  const [chatRequestId, setChatRequestId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<"REQUESTER" | "HELPER">("REQUESTER");
 
-  // 模擬使用者帳號
-  const userIds = {
+  const USER_IDS = {
     REQUESTER: "123e4567-e89b-12d3-a456-426614174000",
     HELPER: "789e4567-e89b-12d3-a456-426614174999",
   };
-  const currentUserId = userIds[userRole];
 
-  // Fetch help requests by status
-  const fetchRequests = () => {
+  const loadRequests = async () => {
     setLoading(true);
-    fetch(`http://localhost:8080/api/requests?status=${filter}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Failed to fetch requests");
-        return res.json();
-      })
-      .then((data: HelpRequest[]) => {
-        setRequests(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Error fetching data:", err);
-        setLoading(false);
-      });
+    try {
+      const data = await fetchHelpRequests(filter);
+      setRequests(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchRequests();
+    loadRequests();
   }, [filter]);
 
-  // Create help request
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!title.trim()) {
-      alert("Please enter a title");
-      return;
+    if (!title.trim() || !description.trim()) {
+        alert("Title and description cannot be empty.");
+        return;
     }
-
-    const body = { title, description };
-
     try {
-      const res = await fetch("http://localhost:8080/api/requests", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-Id": currentUserId,
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) throw new Error("Failed to create request");
-
+      await createHelpRequest(title, description, USER_IDS.REQUESTER);
       setTitle("");
       setDescription("");
-      fetchRequests();
+      loadRequests();
     } catch (err) {
-      console.error(err);
       alert("Error creating request");
     }
   };
 
-  // Claim request
   const handleClaim = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8080/api/requests/${id}/claim`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-Id": currentUserId,
-        },
-      });
-      if (!res.ok) throw new Error("Claim failed");
-      alert("Request claimed successfully!");
-      setFilter("IN_PROGRESS");
+      await claimHelpRequest(id, USER_IDS.HELPER);
+      loadRequests();
     } catch (err) {
-      console.error(err);
       alert("Error claiming request");
     }
   };
 
-  // Complete request
   const handleComplete = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:8080/api/requests/${id}/complete`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-User-Id": currentUserId,
-        },
-      });
-      if (!res.ok) throw new Error("Complete failed");
-      alert("Request marked as completed!");
-      setFilter("COMPLETED");
+      await completeHelpRequest(id, USER_IDS.REQUESTER);
+      loadRequests();
     } catch (err) {
-      console.error(err);
       alert("Error completing request");
     }
   };
 
-  if (loading) return <p>Loading...</p>;
+  if (loading) return <p style={{ textAlign: "center", paddingTop: "50px" }}>Loading help requests...</p>;
 
   return (
-    <div style={{ padding: "2rem", fontFamily: "Arial, sans-serif" }}>
-      <h2>Help Requests Dashboard</h2>
+    <div style={{ padding: "2rem", fontFamily: "'Segoe UI', Roboto, sans-serif", backgroundColor: "#f4f7f9", minHeight: "100vh" }}>
+      <h1 style={{ color: "#333", borderBottom: '2px solid #ddd', paddingBottom: '1rem', marginBottom: '2rem' }}>
+        Support Dashboard
+      </h1>
 
-      {/* 👥 使用者身份選擇 */}
-      <div style={{ marginBottom: "1rem" }}>
-        <label>
-          Current Role:
-          <select
-            value={userRole}
-            onChange={(e) => setUserRole(e.target.value)}
-            style={{ marginLeft: "0.5rem" }}
-          >
-            <option value="REQUESTER">Requester</option>
-            <option value="HELPER">Helper</option>
-          </select>
-        </label>
-        <span style={{ marginLeft: "1rem", fontStyle: "italic" }}>
-          (User ID: {currentUserId})
-        </span>
+      {/* Control Panel: User Switch & Filter */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', padding: '1rem', backgroundColor: '#fff', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+        
+        {/* User Switch */}
+        <div>
+          <label style={{ fontWeight: '600', color: '#555' }}>
+            Current Role:
+            <select
+              value={currentUser}
+              onChange={(e) => setCurrentUser(e.target.value as "REQUESTER" | "HELPER")}
+              style={{ ...inputStyle, width: "150px", marginLeft: "0.8rem" }}
+            >
+              <option value="REQUESTER">Requester</option>
+              <option value="HELPER">Helper</option>
+            </select>
+          </label>
+        </div>
+
+        {/* Filter & Refresh */}
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <label style={{ fontWeight: '600', color: '#555' }}>
+            Filter Status:
+            <select
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              style={{ ...inputStyle, width: "150px", marginLeft: "0.8rem" }}
+            >
+              <option value="ALL">All</option>
+              <option value="OPEN">Open</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="COMPLETED">Completed</option>
+            </select>
+          </label>
+          <button onClick={loadRequests} style={primaryButtonStyle}>
+            🔄 Refresh List
+          </button>
+        </div>
       </div>
 
-      {/* 篩選選單 */}
-      <div style={{ marginBottom: "1rem" }}>
-        <label>
-          Filter by status:
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            style={{ marginLeft: "0.5rem" }}
-          >
-            <option value="ALL">All</option>
-            <option value="OPEN">Open</option>
-            <option value="IN_PROGRESS">In Progress</option>
-            <option value="COMPLETED">Completed</option>
-          </select>
-        </label>
-        <button onClick={fetchRequests} style={{ marginLeft: "1rem" }}>
-          Refresh
-        </button>
-      </div>
-
-      {/* 表單區 */}
-      {userRole === "REQUESTER" && (
-        <form onSubmit={handleSubmit} style={{ marginBottom: "2rem" }}>
-          <div style={{ marginBottom: "0.5rem" }}>
-            <label>
-              Title:
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                style={{ marginLeft: "1rem", width: "300px" }}
-              />
-            </label>
-          </div>
-
-          <div style={{ marginBottom: "0.5rem" }}>
-            <label>
-              Description:
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                style={{ marginLeft: "1rem", width: "300px" }}
-              />
-            </label>
-          </div>
-
-          <button type="submit">Create Help Request</button>
+      {/* Create Form */}
+      {currentUser === "REQUESTER" && (
+        <form onSubmit={handleSubmit} style={{ 
+            marginBottom: "3rem", 
+            padding: "1.5rem", 
+            backgroundColor: '#fff', 
+            borderRadius: '8px', 
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem'
+        }}>
+          <h3 style={{ margin: 0, color: BRAND_COLOR }}>New Request:</h3>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Title (e.g., Printer Error)"
+            style={{ ...inputStyle, flexGrow: 1, marginRight: 0 }}
+            required
+          />
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Brief Description"
+            style={{ ...inputStyle, flexGrow: 2, marginRight: 0 }}
+            required
+          />
+          <button type="submit" style={primaryButtonStyle}>
+            ➕ Create Request
+          </button>
         </form>
       )}
 
-      {/* 列表區 */}
-      {requests.length === 0 ? (
-        <p>No requests found for "{filter}" status.</p>
-      ) : (
-        <ul>
-          {requests.map((req) => (
-            <li key={req.id} style={{ marginBottom: "1rem" }}>
-              <strong>{req.title}</strong> — {req.description}
-              <br />
-              <em>Status:</em> {req.status}
-              <div style={{ marginTop: "0.5rem" }}>
-                {req.status === "OPEN" && userRole === "HELPER" && (
-                  <button
-                    onClick={() => handleClaim(req.id)}
-                    style={{ marginRight: "0.5rem" }}
-                  >
-                    Claim
-                  </button>
-                )}
-                {req.status === "IN_PROGRESS" && (
-                  <button onClick={() => handleComplete(req.id)}>Complete</button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+      {/* Help Request List */}
+      <h3 style={{ color: '#333', marginTop: '3rem' }}>
+        {filter === 'ALL' ? 'All Requests' : `${filter.replace('_', ' ')} Requests`}
+      </h3>
+      <HelpRequestList
+        requests={requests}
+        onClaim={currentUser === "HELPER" ? handleClaim : () => alert('Only Helpers can claim.')}
+        onComplete={currentUser === "REQUESTER" ? handleComplete : () => alert('Only the Requester can complete.')}
+        onOpenChat={(id) => setChatRequestId(id)}
+      />
+
+      {/* Chat Window: Fixed Position Overlay */}
+      {chatRequestId && (
+        <div style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            zIndex: 1000,
+        }}>
+            <ChatWindow
+              requestId={chatRequestId}
+              currentUserId={USER_IDS[currentUser]}
+              onClose={() => setChatRequestId(null)}
+              onMessageSent={loadRequests} 
+            />
+        </div>
       )}
     </div>
   );
